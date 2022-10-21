@@ -1,5 +1,4 @@
 import os
-from dataclasses import dataclass
 from typing import Optional
 import boto3
 from botocore.config import Config
@@ -7,23 +6,30 @@ from dotenv import load_dotenv
 from specklepy.transports.abstract_transport import AbstractTransport
 
 
-@dataclass
-class S3Connection:
-    aws_access_key_id: str
-    aws_secret_access_key: str
+class S3Transport(AbstractTransport):
+    _name: str = 'S3'
+    aws_access_key_id: str = ''
+    aws_secret_access_key: str = ''
     region_name: str = 'eu-west-3'  # Paris, closest to Barcelona
     config_args: Optional[dict] = None
     bucket_name: str = 'speckle-s3-transport'
+    objects: dict = {}
+    sent_obj_count: int = 0
 
-    def __post_init__(self):
+    def __init__(self, name=None, **data) -> None:
+        super().__init__(**data)
+        if name:
+            self._name = name
+        self.aws_access_key_id = os.environ['ACCESS_KEY']
+        self.aws_secret_access_key = os.environ['SECRET_KEY']
         self.config_args = {} if self.config_args is None else self.config_args
         self.client = self.get_client()
 
     def __repr__(self) -> str:
-        return f"S3Connection(region: {self.region_name}, selected_bucket: {self.bucket_name})"
+        return f'S3Transport(objects: {len(self.objects)})'
 
     @property
-    def config(self):
+    def connection_config(self):
         return Config(region_name=self.region_name, **self.config_args)
 
     def get_client(self):
@@ -31,7 +37,7 @@ class S3Connection:
             's3',
             aws_access_key_id=self.aws_access_key_id,
             aws_secret_access_key=self.aws_secret_access_key,
-            config=self.config
+            config=self.connection_config
         )
 
     def get_buckets(self):
@@ -46,49 +52,18 @@ class S3Connection:
             self.create_bucket(bucket_name)
         self.bucket_name = bucket_name
 
-    def put_object(self, key, body):
-        self.client.put_object(
-            Bucket=self.bucket_name,
-            Key=key,
-            Body=body
-        )
-
-    def get_object(self, key):
-        response = self.client.get_object(Bucket=self.bucket_name, Key=key)
+    def get_object(self, id: str) -> Optional[str]:
+        response = self.client.get_object(Bucket=self.bucket_name, Key=id)
         return response['Body'].read()
 
-
-class S3Transport(AbstractTransport):
-    _name: str = "S3"
-    bucket_name: str = 'speckle-s3-transport'
-    _connection: S3Connection = None
-    objects: dict = {}
-    sent_obj_count: int = 0
-
-    def __init__(self, name=None, connection=None, **data) -> None:
-        super().__init__(**data)
-        if name:
-            self._name = name
-        if not connection:
-            connection = S3Connection(
-                aws_access_key_id=os.environ["ACCESS_KEY"],
-                aws_secret_access_key=os.environ["SECRET_KEY"])
-        self._connection = connection
-
-    def __repr__(self) -> str:
-        return f"S3Transport(objects: {len(self.objects)})"
-
     def save_object(self, id: str, serialized_object: str) -> None:
-        self._connection.put_object(key=id, body=serialized_object)
+        self.client.put_object(Bucket=self.bucket_name, Key=id, Body=serialized_object)
         self.objects[id] = serialized_object
         self.sent_obj_count += 1
 
     def save_object_from_transport(self, id: str, source_transport: AbstractTransport) -> None:
         serialized_object = source_transport.get_object(id)
         self.save_object(id, serialized_object)
-
-    def get_object(self, id: str) -> Optional[str]:
-        return self._connection.get_object(key=id)
 
     def begin_write(self):
         self.sent_obj_count = 0
@@ -101,7 +76,7 @@ class S3Transport(AbstractTransport):
         ret = {}
         for id in id_list:
             try:
-                obj = self._connection.get_object(key=id)
+                obj = self.get_object(key=id)
                 ret[id] = True if obj else False
             except:
                 ret[id] = False
