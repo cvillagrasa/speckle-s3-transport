@@ -1,2 +1,1 @@
-.aws
-aws_credentials.py
+aws_credentials.env

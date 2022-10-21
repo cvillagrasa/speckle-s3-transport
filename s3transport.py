@@ -1,8 +1,9 @@
+import os
 from dataclasses import dataclass
 from typing import Optional
 import boto3
 from botocore.config import Config
-from aws_credentials import ACCESS_KEY, SECRET_KEY
+from dotenv import load_dotenv
 from specklepy.transports.abstract_transport import AbstractTransport
 
 
@@ -69,7 +70,9 @@ class S3Transport(AbstractTransport):
         if name:
             self._name = name
         if not connection:
-            connection = S3Connection(aws_access_key_id=ACCESS_KEY, aws_secret_access_key=SECRET_KEY)
+            connection = S3Connection(
+                aws_access_key_id=os.environ["ACCESS_KEY"],
+                aws_secret_access_key=os.environ["SECRET_KEY"])
         self._connection = connection
 
     def __repr__(self) -> str:
@@ -109,5 +112,6 @@ class S3Transport(AbstractTransport):
 
 
 if __name__ == '__main__':
+    load_dotenv("aws_credentials.env")
     s3 = S3Transport()
     print('done!')
